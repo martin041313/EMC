@@ -33,10 +33,13 @@ function B = emc(I,wo,ho)
     u_sigma = zeros(2,2,all);
     v_sigma = zeros(all,1);
     for k = 1 : all
-        xk = mod(k,wo)+0.5;
+        xk = mod(k,wo)-0.5;
         yk = floor(k/wo)+0.5;
-        u(:,:,k) =[xk,yk]';
-        u_sigma(:,:,k) = [rx/3.0 0;0 ry/3.0];
+           
+        yc = floor(yk*ry);
+        xc = floor(xk*rx);
+        u(:,:,k) =[yc,xc]';
+        u_sigma(:,:,k) = [ry/3.0 0;0 rx/3.0];
         v(:,:,k) = [0.5 0.5 0.5]';
         v_sigma(k) = 0.01;
     end 
@@ -48,6 +51,12 @@ function B = emc(I,wo,ho)
     w = zeros(hi,wi,all);
     wt = zeros(hi,wi);
     y = zeros(hi,wi,all);
+    % Pre-compute Gaussian domain weights.
+    xw = ceil(0.5*rx);
+    yw = ceil(0.5*ry);
+    [X,Y] = meshgrid(-yw:yw,-xw:xw);
+    
+    
     while(1)
        %% e_step
        
@@ -55,31 +64,41 @@ function B = emc(I,wo,ho)
        
        %% compute all kernels
        for k = 1 : all
-           xk = mod(k,wo)+0.5;
+           j = mod(k,wo);
+           i = floor(k/wo)+1;
+           xk = mod(k,wo)-0.5;
            yk = floor(k/wo)+0.5;
            
-           ys = ceil(yk-2*ry);
-           ye = floor(yk+2*ry);
-           xs = ceil(xk-2*rx);
-           xe = floor(xk+2*rx);
-           for yi = ys:ye
-               for xi =xs:xe
-                   if(xi>0 && xi<=wi && yi>0 && yi<=hi)
-                        p_delta = ([xi,yi]'-u(:,:,k));
-                        t1 = I(yi,xi,:);
-                        
-                        t12 = reshape(t1,[3,1]);
-                        t2 = v(:,:,k);
-                        c_delta = t12-t2;
-                        p1 = -0.5*p_delta' * inv(u_sigma(:,:,k)) * p_delta;
-                        p2 = -0.5*c_delta'* c_delta/(v_sigma(k)*v_sigma(k));
-                        p = p1+p2;
-                        rs =  exp(p);
-                        wt(yi,xi) = rs;
-                   
-                   end
+           yc = floor(yk*ry);
+           xc = floor(xk*rx);
+           ys = ceil(yc-0.5*ry);
+           ye = floor(yc+0.5*ry);
+           xs = ceil(xc-0.5*rx);
+           xe = floor(xc+0.5*rx);
+           
+           % Extract local region.
+           iMin = max(ys,1);
+           iMax = min(ye,hi);
+           jMin = max(xs,1);
+           jMax = min(xe,wi);
+           It = I(iMin:iMax,jMin:jMax,:);
+           
+           % Compute Gaussian range weights.
+           dL = It(:,:,1)-I(yc,xc,1);
+           da = It(:,:,2)-I(yc,xc,2);
+           db = It(:,:,3)-I(yc,xc,3);
+           H = exp(-(dL.^2+da.^2+db.^2)/(2*v_sigma(k)^2));
+           
+           G = zeros((-iMin+iMax)+1,(-jMin+jMax)+1);
+           p_delta = [0;0];
+           for yi = iMin:iMax
+               for xi = jMin:jMax
+                   p_delta(1,1) = Y(xi,yi) -(u(1,1,k)-yc)-yc+yw+1;
+                   p_delta(2,1) = X(xi,yi) -(u(1,1,k)-xc)-xc+xw+1;
+                   G(xi,yi) = exp(-(p_delta' * inv(u_sigma(:,:,k)) * p_delta));
                end
            end
+           
            
            w_sum = sum(wt(:));
            

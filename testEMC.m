@@ -1,4 +1,4 @@
-I=imread('edge.png');
+I=imread('pic2.png');
 %I=double(I)/255;
 %colorTransform = makecform('srgb2lab');
 %lab = applycform(rgbImage, colorTransform);
